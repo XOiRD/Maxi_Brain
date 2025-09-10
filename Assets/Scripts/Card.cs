@@ -42,8 +42,6 @@ public class Card : MonoBehaviour
     {
         isMatched = true;
         FlipCard(true);
-        gameManager.score += 5;
-        gameManager.UpdateScore();
     }
 
     public void Unmatch()

@@ -6,6 +6,7 @@ using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using System.IO;
 using System.Runtime.Serialization.Formatters.Binary;
+using System.Linq;
 
 public class GameManager : MonoBehaviour
 {
@@ -43,6 +44,14 @@ public class GameManager : MonoBehaviour
     [SerializeField]private int currentMatches = 0;
     private List<Sprite> selectedImages = new List<Sprite>();
 
+    [Header("Combos")]
+    [Space(5)]
+    public TextMeshProUGUI comboText;   
+    public int basePairPoints = 5;      
+    public int comboBonusPerStreak = 2; 
+    private int currentStreak = 0;      
+    private int maxStreak = 0;          
+
     [Header("Sound effects")]
     [Space(5)]
     AudioSource audioSource;
@@ -71,61 +80,56 @@ public class GameManager : MonoBehaviour
 
     public void UpdateGrid(bool isLoading = false)
     {
-        // Clear existing cards if any
         foreach (Transform child in gridLayout.transform)
-        {
             Destroy(child.gameObject);
-        }
         cards.Clear();
-
         if (!isLoading)
         {
-            columns = int.Parse(columnsDropdown.options[columnsDropdown.value].text);
-            rows = int.Parse(rowsDropdown.options[rowsDropdown.value].text);
+            columns = int.Parse(columnsDropdown.options[columnsDropdown.value].text); 
+            rows = int.Parse(rowsDropdown.options[rowsDropdown.value].text);      
         }
+        int totalCards = rows * columns;
+        if ((totalCards % 2) != 0)
+        {
+      
+            if (columns == 3) rows = 2;
+            else columns = 2; 
 
+            Debug.LogWarning($"Invalid grid requested; snapping to a valid one: {rows}x{columns}.");
+            totalCards = rows * columns;
+        }
+        totalMatches = totalCards / 2;
+        int availableUnique = cardImages.Length; 
+        if (availableUnique < totalMatches)
+        {
+            Debug.LogError($"Not enough unique card images: need {totalMatches}, have {availableUnique}. " +
+                           $"Add more images or choose a smaller grid.");
+            return;
+        }
         gridLayout.constraint = GridLayoutGroup.Constraint.FixedRowCount;
         gridLayout.constraintCount = rows;
-
-        // Calculating the width and height of the cell
         float cellWidth = gameArea.rect.width / columns - gridLayout.spacing.x;
         float cellHeight = gameArea.rect.height / rows - gridLayout.spacing.y;
-
-        // Maintain aspect ratio (150x210)
         float aspectRatio = 150f / 210f;
         if (cellWidth / cellHeight > aspectRatio)
-        {
             cellWidth = cellHeight * aspectRatio;
-        }
         else
-        {
             cellHeight = cellWidth / aspectRatio;
-        }
-
         gridLayout.cellSize = new Vector2(cellWidth, cellHeight);
-
-        int totalCards = columns * rows;
-        totalMatches = totalCards / 2;
-
-        // Select and shuffle card images
-        selectedImages = new List<Sprite>();
-        for (int i = 0; i < totalCards / 2; i++)
+        selectedImages = new List<Sprite>(totalCards);
+        for (int i = 0; i < totalMatches; i++)
         {
             selectedImages.Add(cardImages[i]);
             selectedImages.Add(cardImages[i]);
         }
-
         if (!isLoading)
-        {
             Shuffle(selectedImages);
-        }
-
-        // Instantiate the cards
         for (int i = 0; i < totalCards; i++)
         {
-            GameObject card = Instantiate(cardPrefab, gridLayout.transform);
-            card.GetComponent<Card>().Initialize(selectedImages[i], this);
-            cards.Add(card);
+            GameObject cardGO = Instantiate(cardPrefab, gridLayout.transform);
+            var card = cardGO.GetComponent<Card>();
+            card.Initialize(selectedImages[i], this);
+            cards.Add(cardGO);
         }
     }
 
@@ -170,6 +174,7 @@ public class GameManager : MonoBehaviour
         {
             firstSelectedCard[0].SetMatched();
             secondSelectedCard[0].SetMatched();
+            OnPairMatched();
             audioSource.clip = matchAudio;
             audioSource.Play();
             currentMatches++;
@@ -186,6 +191,7 @@ public class GameManager : MonoBehaviour
         {
             firstSelectedCard[0].Unmatch();
             secondSelectedCard[0].Unmatch();
+            OnPairMismatched();
             audioSource.clip = mismatchAudio;
             audioSource.Play();
         }
@@ -206,6 +212,29 @@ public class GameManager : MonoBehaviour
     public void UpdateScore()
     {
         scoreText.text = score.ToString();
+    }
+
+    public void OnPairMatched()
+    {
+        currentStreak++;
+        if (currentStreak > maxStreak) maxStreak = currentStreak;
+        int bonus = (currentStreak - 1) * comboBonusPerStreak;
+        score += basePairPoints + Mathf.Max(0, bonus);
+        UpdateScore();
+        UpdateComboUI();
+    }
+
+    public void OnPairMismatched()
+    {
+        currentStreak = 0;
+        UpdateComboUI();
+    }
+
+    private void UpdateComboUI()
+    {
+        if (comboText == null) return;
+        if (currentStreak < 1) comboText.text = "";
+        else comboText.text = "Combo x" + currentStreak + "!";
     }
 
     IEnumerator CountdownTimer()
